@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+
 require('dotenv').config();
 const { MongoClient, ServerApiVersion } = require('mongodb');
 
@@ -14,17 +16,34 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster
 
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
+function verifyJWT(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        res.status(401).send({ message: 'Unauthorized Access' });
+    }
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
+        if (err) {
+            return res.status(403).send({ message: 'Forbidden Access' })
+        }
+        req.decoded = decoded;
+        next();
+    });
+}
+
 async function run() {
     try {
         await client.connect();
         const serviceCollection = client.db('doctor_portal').collection('services');
         const bookingCollection = client.db('doctor_portal').collection('bookings');
+        const userCollection = client.db('doctor_portal').collection('users');
         /* 
         * API Naming Convention
         app.get('/booking') //get all bookings in this collection. or get more than one or by filter query
         app.get('/booking/:id')  // get a specific booking
         app.post('/booking/')  // add a new booking
         app.patch('/booking/:id')  // updating a specific booking
+        app.put('/booking/:id')  // upsert ==> update (if exists) or insert (if doesn't exist)
         app.delete('/booking/:id')  // delete a specific booking
         */
 
@@ -34,6 +53,24 @@ async function run() {
             const services = await cursor.toArray();
             res.send(services);
         });
+
+        app.get('/user', verifyJWT, async (req, res) => {
+            const users = await userCollection.find().toArray();
+            res.send(users)
+        })
+
+        app.put('/user/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = req.body;
+            const filter = { email: email };
+            const options = { upsert: true };
+            const updatedDoc = {
+                $set: user,
+            };
+            const result = await userCollection.updateOne(filter, updatedDoc, options);
+            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+            res.send({ result, token });
+        })
 
         //WARNING:
         //this is not the proper way to query. I just wanted to try it out with JS
@@ -69,11 +106,19 @@ async function run() {
             res.send(services);
         })
 
-        app.get('/booking', async (req, res) => {
+        app.get('/booking', verifyJWT, async (req, res) => {
             const patient = req.query.patient;
-            const query = { patient: patient };
-            bookings = await bookingCollection.find(query).toArray();
-            res.send(bookings);
+            // const authorization = req.headers.authorization; declaring function at the top
+            // console.log('auth header', authorization);
+            decodedEmail = req.decoded.email;
+            if (patient === decodedEmail) {
+                const query = { patient: patient };
+                bookings = await bookingCollection.find(query).toArray();
+                return res.send(bookings);
+            }
+            else {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
         })
 
         app.post('/booking', async (req, res) => {
