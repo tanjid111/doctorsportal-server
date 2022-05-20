@@ -253,8 +253,8 @@ async function run() {
 
         //update booking with payment and payment id
         app.patch('/booking/:id', verifyJWT, async (req, res) => {
-            const payment = req.body;
             const id = req.params.id;
+            const payment = req.body;
             const filter = { _id: ObjectId(id) };
             const updatedDoc = {
                 $set: {
@@ -265,7 +265,7 @@ async function run() {
             //sending payment info to db
             const result = await paymentCollection.insertOne(payment);
             const updatedBooking = await bookingCollection.updateOne(filter, updatedDoc)
-            res.send(updatedDoc);
+            res.send(updatedBooking);
         })
 
         app.get('/doctor', verifyJWT, verifyAdmin, async (req, res) => {
